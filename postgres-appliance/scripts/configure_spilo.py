@@ -234,7 +234,7 @@ postgresql:
     ssl: 'on'
     ssl_cert_file: {{SSL_CERTIFICATE_FILE}}
     ssl_key_file: {{SSL_PRIVATE_KEY_FILE}}
-    shared_preload_libraries: 'bg_mon,pg_stat_statements,pgextwlist,pg_auth_mon'
+    shared_preload_libraries: {{PGSHAREDLIBRARIES}}
     bg_mon.listen_address: '0.0.0.0'
     pg_stat_statements.track_utility: 'off'
     extwlist.extensions: 'btree_gin,btree_gist,citext,hstore,intarray,ltree,pgcrypto,pgq,pg_trgm,postgres_fdw,uuid-ossp,hypopg'
@@ -408,6 +408,7 @@ def get_placeholders(provider):
     placeholders.setdefault('PGUSER_SUPERUSER', 'postgres')
     placeholders.setdefault('PGPASSWORD_SUPERUSER', 'zalando')
     placeholders.setdefault('PGPORT', '5432')
+    placeholders.setdefault('PGSHAREDLIBRARIES','bg_mon,pg_stat_statements,pgextwlist,pg_auth_mon,pg_partman_bgw')
     placeholders.setdefault('SCOPE', 'dummy')
     placeholders.setdefault('SSL_CERTIFICATE_FILE', os.path.join(placeholders['PGHOME'], 'server.crt'))
     placeholders.setdefault('SSL_PRIVATE_KEY_FILE', os.path.join(placeholders['PGHOME'], 'server.key'))
@@ -534,6 +535,11 @@ def pystache_render(*args, **kwargs):
     render = pystache.Renderer(missing_tags='strict')
     return render.render(*args, **kwargs)
 
+def get_etcd_auth(placeholders):
+    etcd_auth = {}
+    if 'ETCD_USERNAME' in placeholders and 'ETCD_PASSWORD' in placeholders:
+        etcd_auth = {'username': placeholders['ETCD_USERNAME'],'password': placeholders['ETCD_PASSWORD']}
+    return etcd_auth
 
 def get_dcs_config(config, placeholders):
     if USE_KUBERNETES and placeholders.get('DCS_ENABLE_KUBERNETES_API'):
@@ -556,9 +562,9 @@ def get_dcs_config(config, placeholders):
         config = {'exhibitor': {'hosts': yaml.load(placeholders['EXHIBITOR_HOSTS']),
                                 'port': placeholders['EXHIBITOR_PORT']}}
     elif 'ETCD_HOST' in placeholders:
-        config = {'etcd': {'host': placeholders['ETCD_HOST']}}
+        config = {'etcd': {'host': placeholders['ETCD_HOST'], **get_etcd_auth(placeholders) }}
     elif 'ETCD_DISCOVERY_DOMAIN' in placeholders:
-        config = {'etcd': {'discovery_srv': placeholders['ETCD_DISCOVERY_DOMAIN']}}
+        config = {'etcd': {'discovery_srv': placeholders['ETCD_DISCOVERY_DOMAIN'], **get_etcd_auth(placeholders) }}
     else:
         config = {}  # Configuration can also be specified using either SPILO_CONFIGURATION or PATRONI_CONFIGURATION
 

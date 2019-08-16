@@ -24,9 +24,30 @@ for i in $(seq 0 7); do
         touch "${PGLOG}/postgresql-$i.csv"
     fi
 done
-chown -R postgres:postgres "$PGROOT"
+chown -R postgres:postgres "$PGHOME"
 
-if [ "$DEMO" = "true" ]; then
+if [ "$CHECKBACKUP" = "true" ]; then
+    TS_START=$(date +%s)
+    python3 /scripts/configure_spilo.py wal-e certificate
+    envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGROOT/data/ LATEST
+    chown -R postgres:postgres "$PGHOME"
+    chmod 0700 $PGROOT/data/
+    su postgres -c "rm -f $PGROOT/data/backup_label && mkdir -p $PGROOT/data/pg_wal/archive_status/ \
+                    && $(which pg_resetwal) -f $PGROOT/data/ \
+                    && $(which pg_ctl) start -D $PGROOT/data/"
+    for i in $(seq 0 5); do
+        su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
+        [[ "$STATUS" != "OK" ]] && sleep 20
+    done
+    
+    su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
+    TS_STOP=$(date +%s)
+    DURATION=$(($TS_STOP-$TS_START))
+    echo "Latest postgresql backup check from $WALE_S3_PREFIX \nTIME: $DURATION sec."
+    
+    rm -rf $PGHOME/*
+
+elif [ "$DEMO" = "true" ]; then
     sed -i '/motd/d' /root/.bashrc
     python3 /scripts/configure_spilo.py patroni patronictl certificate pam-oauth2
     (

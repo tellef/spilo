@@ -72,7 +72,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update \
     && cd /builddeps \
 \
-    && BUILD_PACKAGES="devscripts build-essential fakeroot debhelper git gcc libc6-dev make libevent-dev naturaldocs python" \
+    && BUILD_PACKAGES="devscripts build-essential fakeroot debhelper git gcc libc6-dev make libevent-dev naturaldocs python pandoc" \
 # pgq3: naturaldocs python
     && if [ "$DEMO" = "true" ]; then \
         PGOLDVERSIONS="" \
@@ -103,7 +103,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 \
         # prepare 3rd sources
         && git clone -b $DECODERBUFS https://github.com/debezium/postgres-decoderbufs.git \
-        && git clone -b $PLPROFILER https://github.com/pgcentral/plprofiler.git \
+        && git clone -b $PLPROFILER https://github.com/bigsql/plprofiler.git \
         && git clone -b $PLPGSQL_CHECK https://github.com/okbob/plpgsql_check.git \
         && git clone -b $TIMESCALEDB https://github.com/timescale/timescaledb.git \
         && git clone git://www.sigaev.ru/plantuner.git; \
@@ -126,7 +126,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
                         postgresql-${version}-pldebugger \
                         postgresql-${version}-pllua \
                         postgresql-${version}-plproxy \
-                        postgresql-${version}-repack" \
+                        postgresql-${version}-repack " \
                 && if [ "$WITH_PERL" = "true" ]; then \
                     EXTRAS="$EXTRAS postgresql-plperl-${version}"; \
                 fi \
@@ -136,7 +136,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
                             postgresql-${version}-pglogical \
                             postgresql-${version}-postgis-${POSTGIS_VERSION} \
                             postgresql-${version}-postgis-${POSTGIS_VERSION}-scripts \
-                            postgresql-${version}-wal2json" \
+                            postgresql-${version}-wal2json \
+                            postgresql-${version}-jsquery" \
                     && if [ $version != "9.4" ]; then \
                         EXTRAS="$EXTRAS postgresql-${version}-pgl-ddl-deploy"; \
                     fi \
@@ -155,7 +156,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
             # Install PostgreSQL binaries, contrib, plproxy and multiple pl's
             && apt-get install --allow-downgrades -y postgresql-contrib-${version} \
                         postgresql-plpython3-${version} libpq5=$version* $EXTRAS \
-                        libpq-dev=$version* postgresql-server-dev-${version} \
+                        libpq-dev=$version* postgresql-server-dev-${version} || apt-get --fix-broken install -y \
 \
             # Install 3rd party stuff
             && if [ "$DEMO" != "true" ]; then \
@@ -175,6 +176,12 @@ RUN export DEBIAN_FRONTEND=noninteractive \
                     && cd ..; \
                 fi \
 \
+#                 && if [ "$version" = "9.6" ] || [ "$version" = "10" ] || [ "$version" = "11" ]; then \
+#                     apt-get install -y libgdal-dev libgeos-dev \
+#                     && curl -sL https://download.osgeo.org/postgis/source/postgis-2.3.3.tar.gz | tar xz \
+#                     && cd postgis-2.3.3 && ./configure && make install && cd ..; \
+#                 fi \
+# \
                 # Install pg_rewind on 9.3 and 9.4
                 && if [ "$version" = "9.3" ] || [ "$version" = "9.4" ]; then \
                     REWIND_VER=REL$(echo $version | sed 's/\./_/')_STABLE \
@@ -206,7 +213,6 @@ RUN export DEBIAN_FRONTEND=noninteractive \
         apt-get source pgbouncer \
         && cd $(ls -d pgbouncer-*) \
         # Set last_connect_time for pool only when it really failed to connect
-        && curl -sL https://github.com/pgbouncer/pgbouncer/pull/127.diff | patch -p1 \
         && curl -sL https://github.com/pgbouncer/pgbouncer/pull/326.diff \
             | sed -n '/^diff --git a\/src\/client.c b\/src\/client.c/,$ p' | patch -p1 \
         # Increase password size
@@ -218,7 +224,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     fi \
 \
     # build and install missing packages
-    && apt-get install -y postgresql-server-dev-all postgresql-server-dev-9.3 \
+    && apt-get install -y postgresql-common postgresql-server-dev-all postgresql-server-dev-9.3 \
     && for pkg in pgextwlist; do \
         apt-get source postgresql-10-${pkg} \
         && cd $(ls -d *${pkg%?}*-*) \
@@ -228,13 +234,14 @@ RUN export DEBIAN_FRONTEND=noninteractive \
             && egrep -v '(PG_END_TRY|EmitWarningsOnPlaceholders)' pgextwlist.c.f > pgextwlist.c; \
         fi \
         && rm -f debian/pgversions \
-        && for version in ${PGOLDVERSIONS} ${PGVERSION}; do \
+        && PGBUILDVERSIONS="`echo $PGOLDVERSIONS $PGVERSION | tr ' '  '\n' | sort -u `" \
+        && for version in $PGBUILDVERSIONS ; do \
             echo ${version} >> debian/pgversions; \
         done \
         && pg_buildext updatecontrol \
         && debuild -b -uc -us \
         && cd .. \
-        && for version in ${PGOLDVERSIONS} ${PGVERSION}; do \
+        && for version in $PGBUILDVERSIONS; do \
             for deb in postgresql-${version}-${pkg}_*.deb; do \
                 if [ -f $deb ]; then dpkg -i $deb; fi; \
             done; \
@@ -242,7 +249,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     done \
 \
     # Remove unnecessary packages
-    && apt-get purge -y ${BUILD_PACKAGES} postgresql-server-dev-* libmagic1 bsdmainutils \
+    && apt-get purge -y ${BUILD_PACKAGES} postgresql-server-dev-* libmagic1 bsdmainutils || apt-get --fix-broken install -y \
     && apt-get autoremove -y \
     && apt-get clean \
     && dpkg -l | grep '^rc' | awk '{print $2}' | xargs apt-get purge -y \
@@ -393,7 +400,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
         && strip /usr/local/bin/wal-g \
         && apt-get install -y python3-etcd python3-consul python3-kazoo python3-meld3 \
                         python3-boto python3-gevent python3-greenlet python3-protobuf \
-                        python3-websocket python3-requests-oauthlib python3-swiftclient \
+                        python3-websocket python3-requests-oauthlib python3-swiftclient pg-activity \
 \
         && find /usr/share/python-babel-localedata/locale-data -type f ! -name 'en_US*.dat' -delete \
 \
@@ -447,6 +454,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 
 ARG COMPRESS=false
 
+RUN mkdir -p /opt/postgres && touch /opt/postgres/postgresql.base.conf
+
 RUN set -ex \
     && if [ "$COMPRESS" = "true" ]; then \
         apt-get update \
@@ -458,7 +467,7 @@ RUN set -ex \
         && libs="$(ldd $files | awk '{print $3;}' | grep '^/' | sort -u) /lib/x86_64-linux-gnu/ld-linux-x86-64.so.* /lib/x86_64-linux-gnu/libnsl.so.* /lib/x86_64-linux-gnu/libnss_compat.so.*" \
         && (echo /var/run $files $libs | tr ' ' '\n' && realpath $files $libs) | sort -u | sed 's/^\///' > /exclude \
         && find /etc/alternatives -xtype l -delete \
-        && save_dirs="usr lib var bin sbin etc/ssl etc/init.d etc/alternatives etc/apt" \
+        && save_dirs="usr lib var bin sbin opt/postgres etc/ssl etc/init.d etc/alternatives etc/apt" \
         && XZ_OPT=-e9v tar -X /exclude -cpJf a.tar.xz $save_dirs \
         && rm -fr /usr/local/lib/python* \
         && /bin/busybox sh -c "(find $save_dirs -not -type d && cat /exclude /exclude && echo exclude) | sort | uniq -u | xargs /bin/busybox rm" \
