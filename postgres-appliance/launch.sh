@@ -29,6 +29,7 @@ chown -R postgres:postgres "$PGHOME"
 if [ "$CHECKBACKUP" = "true" ]; then
     TS_START=$(date +%s)
     python3 /scripts/configure_spilo.py wal-e certificate
+    LATEST_BACKUP=$(envdir /home/postgres/etc/wal-e.d/env wal-g backup-list | tail -1 )
     envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGROOT/data/ LATEST
     chown -R postgres:postgres "$PGHOME"
     chmod 0700 $PGROOT/data/
@@ -43,8 +44,26 @@ if [ "$CHECKBACKUP" = "true" ]; then
     su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
     TS_STOP=$(date +%s)
     DURATION=$(($TS_STOP-$TS_START))
-    echo "Latest postgresql backup check from $WALE_S3_PREFIX \nTIME: $DURATION sec."
-    
+    BACKUP_ID=$(echo $LATEST_BACKUP | cut -d " " -f1)
+    BACKUP_MODTIME=$(echo $LATEST_BACKUP | cut -d " " -f2)
+    BACKUP_SIZE=$(du -sh $PGROOT | cut -d"/" -f1)
+
+    INFO_TEXT="Latest postgresql backup check from $WALE_S3_PREFIX \n\
+    backup id: $BACKUP_ID \n\
+    backup size: $BACKUP_SIZE \n\
+    modification time: $BACKUP_MODTIME\n\
+    duration: $DURATION sec."
+    echo -e $INFO_TEXT
+
+    if [[ ! -z "$SLACKNOTIFYURL" ]]; then
+        SLACK_TITLE="backup check status: $STATUS"
+
+        [[ "$STATUS" = "OK" ]] && SLACK_COLOR="good" || SLACK_COLOR="danger"
+
+        PAYLOAD="{\"username\":\"$SLACKUSERNAME\",\"channel\":\"$SLACKCHANNEL\",\"icon_emoji\":\":moyai:\",\"attachments\":[{\"title\":\"$SLACK_TITLE\",\"color\":\"$SLACK_COLOR\",\"text\":\"$INFO_TEXT\",\"ts\":$TS_START}]}"
+        curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" $SLACKNOTIFYURL
+    fi
+
     rm -rf $PGHOME/*
 
 elif [ "$DEMO" = "true" ]; then
