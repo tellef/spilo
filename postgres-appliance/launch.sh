@@ -31,7 +31,7 @@ if [ "$CHECKBACKUP" = "true" ]; then
     python3 /scripts/configure_spilo.py wal-e certificate
     LATEST_BACKUP=$(envdir /home/postgres/etc/wal-e.d/env wal-g backup-list | tail -1 )
     envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGDATA LATEST
-    chown -R postgres:postgres "$PGHOME"
+    chown -R postgres:postgres "$PGHOME" "$PGDATA"
     chmod 0700 $PGDATA
     su postgres -c "rm -f $PGDATA/backup_label && mkdir -p $PGDATA/pg_wal/archive_status/ \
                     && $(which pg_resetwal) -f $PGDATA \
@@ -46,7 +46,7 @@ if [ "$CHECKBACKUP" = "true" ]; then
     DURATION=$(($TS_STOP-$TS_START))
     BACKUP_ID=$(echo $LATEST_BACKUP | cut -d " " -f1)
     BACKUP_MODTIME=$(echo $LATEST_BACKUP | cut -d " " -f2)
-    BACKUP_SIZE=$(du -sh $PGROOT | cut -d"/" -f1)
+    BACKUP_SIZE=$(du -sh $PGDATA | cut -d"/" -f1)
 
     INFO_TEXT="Latest postgresql backup check from $WALE_S3_PREFIX \n\
     backup id: $BACKUP_ID \n\
