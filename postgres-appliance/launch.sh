@@ -30,12 +30,12 @@ if [ "$CHECKBACKUP" = "true" ]; then
     TS_START=$(date +%s)
     python3 /scripts/configure_spilo.py wal-e certificate
     LATEST_BACKUP=$(envdir /home/postgres/etc/wal-e.d/env wal-g backup-list | tail -1 )
-    envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGROOT/data/ LATEST
+    envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGDATA LATEST
     chown -R postgres:postgres "$PGHOME"
-    chmod 0700 $PGROOT/data/
-    su postgres -c "rm -f $PGROOT/data/backup_label && mkdir -p $PGROOT/data/pg_wal/archive_status/ \
-                    && $(which pg_resetwal) -f $PGROOT/data/ \
-                    && $(which pg_ctl) start -D $PGROOT/data/"
+    chmod 0700 $PGDATA
+    su postgres -c "rm -f $PGDATA/backup_label && mkdir -p $PGDATA/pg_wal/archive_status/ \
+                    && $(which pg_resetwal) -f $PGDATA \
+                    && $(which pg_ctl) start -D $PGDATA"
     for i in $(seq 0 5); do
         su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
         [[ "$STATUS" != "OK" ]] && sleep 20
