@@ -31,7 +31,7 @@ if [ "$CHECKBACKUP" = "true" ]; then
     python3 /scripts/configure_spilo.py wal-e certificate
     LATEST_BACKUP=$(envdir /home/postgres/etc/wal-e.d/env wal-g backup-list | tail -1 )
     envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGDATA LATEST
-    chown -R postgres:postgres "$PGHOME" "$PGDATA"
+    chown -R postgres:postgres "$PGHOME"
     chmod 0700 $PGDATA
     su postgres -c "rm -f $PGDATA/backup_label && mkdir -p $PGDATA/pg_wal/archive_status/ \
                     && $(which pg_resetwal) -f $PGDATA \
@@ -40,7 +40,7 @@ if [ "$CHECKBACKUP" = "true" ]; then
         su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
         [[ "$STATUS" != "OK" ]] && sleep 20
     done
-    
+
     su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
     TS_STOP=$(date +%s)
     DURATION=$(($TS_STOP-$TS_START))
@@ -64,6 +64,11 @@ if [ "$CHECKBACKUP" = "true" ]; then
         curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" $SLACKNOTIFYURL
     fi
 
+    if [[ ! -z "$OPSGENIEBACKUPHOOKURI" && ! -z "$OPSGENIEBACKUPHOOKKEY" ]]; then
+        curl -s -X GET "$OPSGENIEBACKUPHOOKURI" --header "Authorization: GenieKey $OPSGENIEBACKUPHOOKKEY"
+    fi
+
+    su postgres -c "$(which pg_ctl) stop -D $PGDATA"
     rm -rf $PGHOME/*
 
 elif [ "$DEMO" = "true" ]; then
