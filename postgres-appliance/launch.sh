@@ -31,17 +31,22 @@ if [ "$CHECKBACKUP" = "true" ]; then
     python3 /scripts/configure_spilo.py wal-e certificate
     LATEST_BACKUP=$(envdir /home/postgres/etc/wal-e.d/env wal-g backup-list | tail -1 )
     envdir /home/postgres/etc/wal-e.d/env wal-g backup-fetch $PGDATA LATEST
+
+cat <<EOF > $PGDATA/recovery.conf
+restore_command = 'envdir "/home/postgres/etc/wal-e.d/env" /scripts/restore_command.sh "%f" "%p"'
+recovery_target_timeline = 'immediate'
+EOF
+    sed -i "s/^archive_mode.*/archive_mode\ =\ 'off'/g" $PGDATA/postgresql.conf
+    sed -i "s/^archive_command.*/archive_command\ =\ '\/bin\/true'/g" $PGDATA/postgresql.conf
+
     chown -R postgres:postgres "$PGHOME"
     chmod 0700 $PGDATA
-    su postgres -c "rm -f $PGDATA/backup_label && mkdir -p $PGDATA/pg_wal/archive_status/ \
-                    && $(which pg_resetwal) -f $PGDATA \
-                    && $(which pg_ctl) start -D $PGDATA"
-    for i in $(seq 0 5); do
-        su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
-        [[ "$STATUS" != "OK" ]] && sleep 20
+    su postgres -c "$(which pg_ctl) start -D $PGDATA"
+    STATUS="FAILED"
+    for i in $(seq 0 10); do
+        su postgres -c "$(which pg_isready)" && STATUS="OK" || sleep 60
     done
 
-    su postgres -c "$(which pg_isready)" && STATUS="OK" || STATUS="FAILED"
     TS_STOP=$(date +%s)
     DURATION=$(($TS_STOP-$TS_START))
     BACKUP_ID=$(echo $LATEST_BACKUP | cut -d " " -f1)
@@ -53,7 +58,7 @@ if [ "$CHECKBACKUP" = "true" ]; then
     backup size: $BACKUP_SIZE \n\
     modification time: $BACKUP_MODTIME\n\
     duration: $DURATION sec."
-    echo -e $INFO_TEXT
+    echo -e "$INFO_TEXT"
 
     if [[ ! -z "$SLACKNOTIFYURL" ]]; then
         SLACK_TITLE="backup check status: $STATUS"
@@ -64,7 +69,7 @@ if [ "$CHECKBACKUP" = "true" ]; then
         curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" $SLACKNOTIFYURL
     fi
 
-    if [[ ! -z "$OPSGENIEBACKUPHOOKURI" && ! -z "$OPSGENIEBACKUPHOOKKEY" ]]; then
+    if [[ ! -z "$OPSGENIEBACKUPHOOKURI" ]] && [[ ! -z "$OPSGENIEBACKUPHOOKKEY" ]]; then
         curl -s -X GET "$OPSGENIEBACKUPHOOKURI" --header "Authorization: GenieKey $OPSGENIEBACKUPHOOKKEY"
     fi
 
